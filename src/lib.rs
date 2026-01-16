@@ -6,11 +6,14 @@ use docker_api::Docker;
 use libnss::host::{AddressFamily, Addresses, Host, HostHooks};
 use libnss::interop::Response;
 use libnss::libnss_host_hooks;
+use std::env;
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 
 static SUFFIX: &str = ".docker";
+
+static DOCKER_HOST: &str = "DOCKER_HOST";
 static DOCKER_URI: &str = "unix:///var/run/docker.sock";
 static CONTAINER_SUBDOMAINS_ALLOWED_LABEL: &str =
     ".com.github.petski.nss-docker-ng.container-subdomains-allowed";
@@ -41,7 +44,10 @@ struct DefaultDockerUriProvider;
 
 impl DockerUriProvider for DefaultDockerUriProvider {
     fn get_docker_uri(&self) -> String {
-        DOCKER_URI.to_string()
+        match env::var(DOCKER_HOST) {
+            Ok(v) => v,
+            Err(_) => DOCKER_URI.to_string(),
+        }
     }
 }
 
@@ -540,5 +546,28 @@ mod tests {
             ],
             mock_provider,
         )
+    }
+
+    #[test]
+    fn test_get_docker_uri_default() {
+        unsafe {
+            env::remove_var(DOCKER_HOST);
+        }
+
+        let provider = DefaultDockerUriProvider;
+
+        assert_eq!(provider.get_docker_uri(), DOCKER_URI);
+    }
+
+    #[test]
+    fn test_get_docker_uri_from_env() {
+        let rootless_socket = "unix:///run/user/1000/docker.sock";
+        unsafe {
+            env::set_var(DOCKER_HOST, rootless_socket);
+        }
+
+        let provider = DefaultDockerUriProvider;
+
+        assert_eq!(provider.get_docker_uri(), rootless_socket);
     }
 }
